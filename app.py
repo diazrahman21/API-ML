@@ -11,7 +11,12 @@ import tensorflow as tf
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)
+
+# Configure CORS to match your Hapi.js setup
+CORS(app, 
+     origins=['http://localhost:5173', 'http://localhost:3000', 'http://localhost:5001'],
+     allow_headers=['Accept', 'Authorization', 'Content-Type', 'If-None-Match', 'cache-control', 'x-requested-with'],
+     supports_credentials=True)
 
 # Global variables for model and preprocessing objects
 model = None
@@ -235,26 +240,86 @@ def dataset_info():
 
 @app.route('/', methods=['GET'])
 def home():
-    """API information endpoint"""
+    """API information endpoint - compatible with Hapi.js format"""
     return jsonify({
-        "message": "Cardiovascular Disease Prediction API",
+        "message": "IllDetect ML Prediction Service",
+        "service": "cardiovascular-prediction",
         "version": "1.0.1",
         "status": "active",
+        "port": os.environ.get('PORT', 10000),
+        "environment": os.environ.get('FLASK_ENV', 'production'),
         "endpoints": {
-            "POST /predict": "Make cardiovascular disease prediction",
-            "GET /health": "Health check",
-            "GET /model-info": "Model information",
-            "GET /dataset-info": "Dataset information and feature descriptions",
-            "POST /convert-age": "Convert age between years and days",
-            "GET /debug": "Debug information"
+            "GET /": "API information",
+            "GET /api/health": "Health check (compatible with main backend)",
+            "GET /api/status": "Service status",
+            "POST /api/predict": "Cardiovascular disease prediction",
+            "GET /api/model-info": "ML model information",
+            "GET /api/dataset-info": "Dataset information",
+            "POST /api/convert-age": "Age conversion utility",
+            "GET /api/debug": "Debug information"
         },
-        "model_status": "loaded" if model is not None else "not_loaded",
-        "components": {
+        "ml_components": {
             "model": "loaded" if model is not None else "not_loaded",
             "scaler": "loaded" if scaler is not None else "not_loaded", 
             "feature_info": "loaded" if feature_info is not None else "not_loaded"
+        },
+        "integration": {
+            "main_backend": "http://localhost:5001",
+            "compatible_endpoints": ["health", "predict", "status"],
+            "data_format": "standardized for frontend integration"
         }
     })
+
+# Add /api prefix routes for consistency with Hapi.js backend
+@app.route('/api/health', methods=['GET'])
+def api_health_check():
+    """Health check endpoint with /api prefix - compatible with main backend"""
+    return health_check()
+
+@app.route('/api/status', methods=['GET'])
+def api_status():
+    """Service status endpoint"""
+    return jsonify({
+        "service": "ml-prediction",
+        "status": "healthy" if all([model is not None, scaler is not None, feature_info is not None]) else "degraded",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "uptime": "running",
+        "components": {
+            "tensorflow_model": "operational" if model is not None else "failed",
+            "data_scaler": "operational" if scaler is not None else "failed",
+            "feature_processor": "operational" if feature_info is not None else "failed"
+        },
+        "metrics": {
+            "prediction_ready": all([model is not None, scaler is not None, feature_info is not None]),
+            "last_model_load": "startup",
+            "memory_usage": "normal"
+        }
+    })
+
+@app.route('/api/predict', methods=['POST'])
+def api_predict():
+    """ML prediction endpoint with /api prefix"""
+    return predict()
+
+@app.route('/api/model-info', methods=['GET'])
+def api_model_info():
+    """Model information endpoint with /api prefix"""
+    return model_info()
+
+@app.route('/api/dataset-info', methods=['GET'])
+def api_dataset_info():
+    """Dataset information endpoint with /api prefix"""
+    return dataset_info()
+
+@app.route('/api/convert-age', methods=['POST'])
+def api_convert_age():
+    """Age conversion endpoint with /api prefix"""
+    return convert_age()
+
+@app.route('/api/debug', methods=['GET'])
+def api_debug_info():
+    """Debug information endpoint with /api prefix"""
+    return debug_info()
 
 @app.route('/debug', methods=['GET'])
 def debug_info():
@@ -390,6 +455,7 @@ def convert_age():
             "status": "error"
         }), 500
 
+# Update predict function to handle both direct calls and API calls
 @app.route('/predict', methods=['POST'])
 def predict():
     """Make cardiovascular disease prediction"""
@@ -399,7 +465,12 @@ def predict():
             print("🔄 Predict: Models not loaded, attempting to load...")
             if not load_model_and_preprocessors():
                 return jsonify({
-                    "error": "Model tidak tersedia dan gagal dimuat",
+                    "success": False,
+                    "error": {
+                        "message": "ML model tidak tersedia dan gagal dimuat",
+                        "type": "model_load_error",
+                        "service": "ml-prediction"
+                    },
                     "status": "error"
                 }), 500
         
@@ -408,7 +479,12 @@ def predict():
         
         if not data:
             return jsonify({
-                "error": "No data provided",
+                "success": False,
+                "error": {
+                    "message": "No prediction data provided",
+                    "type": "validation_error",
+                    "service": "ml-prediction"
+                },
                 "status": "error"
             }), 400
         
@@ -437,10 +513,14 @@ def predict():
         
         for field in required_fields:
             if field not in converted_data:
-                # Check original field name for better error message
                 original_field = next((k for k, v in field_mapping.items() if v == field), field)
                 return jsonify({
-                    "error": f"Field '{original_field}' wajib diisi",
+                    "success": False,
+                    "error": {
+                        "message": f"Field '{original_field}' wajib diisi",
+                        "type": "validation_error",
+                        "service": "ml-prediction"
+                    },
                     "status": "error"
                 }), 400
         
@@ -448,25 +528,45 @@ def predict():
         age_years = converted_data['age']
         if not isinstance(age_years, (int, float)) or age_years < 1 or age_years > 120:
             return jsonify({
-                "error": "Age harus antara 1-120 tahun",
+                "success": False,
+                "error": {
+                    "message": "Age harus antara 1-120 tahun",
+                    "type": "validation_error",
+                    "service": "ml-prediction"
+                },
                 "status": "error"
             }), 400
         
         if converted_data['gender'] not in [0, 1]:
             return jsonify({
-                "error": "Sex harus 0 (female) atau 1 (male)",
+                "success": False,
+                "error": {
+                    "message": "Sex harus 0 (female) atau 1 (male)",
+                    "type": "validation_error",
+                    "service": "ml-prediction"
+                },
                 "status": "error"
             }), 400
         
         if converted_data['height'] <= 0 or converted_data['weight'] <= 0:
             return jsonify({
-                "error": "Height dan weight harus lebih besar dari 0",
+                "success": False,
+                "error": {
+                    "message": "Height dan weight harus lebih besar dari 0",
+                    "type": "validation_error",
+                    "service": "ml-prediction"
+                },
                 "status": "error"
             }), 400
         
         if converted_data['ap_hi'] <= converted_data['ap_lo']:
             return jsonify({
-                "error": "Systolic BP harus lebih besar dari Diastolic BP",
+                "success": False,
+                "error": {
+                    "message": "Systolic BP harus lebih besar dari Diastolic BP",
+                    "type": "validation_error",
+                    "service": "ml-prediction"
+                },
                 "status": "error"
             }), 400
         
@@ -475,19 +575,29 @@ def predict():
             if converted_data[field] not in [1, 2, 3]:
                 field_name = 'glucose' if field == 'gluc' else field
                 return jsonify({
-                    "error": f"{field_name} harus 1, 2, atau 3",
+                    "success": False,
+                    "error": {
+                        "message": f"{field_name} harus 1, 2, atau 3",
+                        "type": "validation_error",
+                        "service": "ml-prediction"
+                    },
                     "status": "error"
                 }), 400
         
         for field, original_name in [('smoke', 'smoking'), ('alco', 'alcohol'), ('active', 'physical_activity')]:
             if converted_data[field] not in [0, 1]:
                 return jsonify({
-                    "error": f"{original_name} harus 0 atau 1",
+                    "success": False,
+                    "error": {
+                        "message": f"{original_name} harus 0 atau 1",
+                        "type": "validation_error",
+                        "service": "ml-prediction"
+                    },
                     "status": "error"
                 }), 400
         
         # Convert age to days
-        age_days = convert_age_to_days(age_years)
+        age_days = convert_age_to_days(converted_data['age'])
         
         # Prepare input data
         input_data = np.array([[
@@ -512,38 +622,44 @@ def predict():
         prediction = 1 if prediction_prob > 0.5 else 0
         confidence = prediction_prob if prediction == 1 else (1 - prediction_prob)
         
-        # Interpretasi hasil
-        if prediction == 1:
-            result_message = "RISIKO TINGGI - Disarankan konsultasi dengan dokter"
-            interpretation = "Berdasarkan data yang diberikan, terdapat indikasi risiko penyakit kardiovaskular"
-        else:
-            result_message = "RISIKO RENDAH - Pertahankan gaya hidup sehat"
-            interpretation = "Berdasarkan data yang diberikan, risiko penyakit kardiovaskular relatif rendah"
-        
         # Calculate BMI
         bmi = round(converted_data['weight'] / ((converted_data['height']/100) ** 2), 2)
         
+        # Format response to match main backend format
         response = {
-            "prediction": int(prediction),
-            "confidence": round(float(confidence), 4),
-            "probability": round(float(prediction_prob), 4),
-            "result": result_message,
-            "interpretation": interpretation,
-            "input_data": {
-                "age_years": age_years,
-                "age_days": age_days,
-                "gender": "Male" if converted_data['gender'] == 1 else "Female",
-                "height": converted_data['height'],
-                "weight": converted_data['weight'],
-                "bmi": bmi,
-                "blood_pressure": f"{converted_data['ap_hi']}/{converted_data['ap_lo']}",
-                "cholesterol_level": ["Normal", "Above Normal", "Well Above Normal"][converted_data['cholesterol']-1],
-                "glucose_level": ["Normal", "Above Normal", "Well Above Normal"][converted_data['gluc']-1],
-                "smoking": "Yes" if converted_data['smoke'] == 1 else "No",
-                "alcohol": "Yes" if converted_data['alco'] == 1 else "No",
-                "physical_activity": "Yes" if converted_data['active'] == 1 else "No"
+            "success": True,
+            "data": {
+                "prediction": int(prediction),
+                "confidence": round(float(confidence), 4),
+                "probability": round(float(prediction_prob), 4),
+                "risk_level": "HIGH" if prediction == 1 else "LOW",
+                "result_message": "RISIKO TINGGI - Disarankan konsultasi dengan dokter" if prediction == 1 else "RISIKO RENDAH - Pertahankan gaya hidup sehat",
+                "interpretation": "Berdasarkan data yang diberikan, terdapat indikasi risiko penyakit kardiovaskular" if prediction == 1 else "Berdasarkan data yang diberikan, risiko penyakit kardiovaskular relatif rendah",
+                "patient_data": {
+                    "age_years": converted_data['age'],
+                    "age_days": age_days,
+                    "gender": "Male" if converted_data['gender'] == 1 else "Female",
+                    "height": converted_data['height'],
+                    "weight": converted_data['weight'],
+                    "bmi": bmi,
+                    "bmi_category": "Underweight" if bmi < 18.5 else "Normal" if bmi < 25 else "Overweight" if bmi < 30 else "Obese",
+                    "blood_pressure": f"{converted_data['ap_hi']}/{converted_data['ap_lo']}",
+                    "cholesterol_level": ["Normal", "Above Normal", "Well Above Normal"][converted_data['cholesterol']-1],
+                    "glucose_level": ["Normal", "Above Normal", "Well Above Normal"][converted_data['gluc']-1],
+                    "lifestyle": {
+                        "smoking": "Yes" if converted_data['smoke'] == 1 else "No",
+                        "alcohol": "Yes" if converted_data['alco'] == 1 else "No",
+                        "physical_activity": "Yes" if converted_data['active'] == 1 else "No"
+                    }
+                }
             },
-            "timestamp": datetime.datetime.now().isoformat(),
+            "metadata": {
+                "service": "ml-prediction",
+                "model_version": "1.0",
+                "prediction_id": f"pred_{int(datetime.datetime.now().timestamp())}",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "processing_time": "< 1s"
+            },
             "status": "success"
         }
         
@@ -551,8 +667,13 @@ def predict():
     
     except Exception as e:
         return jsonify({
-            "error": str(e),
-            "traceback": traceback.format_exc(),
+            "success": False,
+            "error": {
+                "message": str(e),
+                "type": "prediction_error",
+                "service": "ml-prediction",
+                "traceback": traceback.format_exc()
+            },
             "status": "error"
         }), 500
 
@@ -583,5 +704,7 @@ def internal_error(error):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    # Railway akan menggunakan gunicorn, tapi ini untuk local testing
+    print(f"🤖 Starting IllDetect ML Service on port {port}")
+    print(f"🔗 Main backend integration: http://localhost:5001")
+    print(f"🎯 ML endpoints available with /api prefix for consistency")
     app.run(debug=False, host='0.0.0.0', port=port)
