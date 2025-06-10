@@ -620,6 +620,8 @@ def predict():
                 "status": "error"
             }), 400
         
+        print(f"🔍 Received data: {data}")  # Debug log
+        
         # Map frontend field names to backend field names
         field_mapping = {
             'sex': 'gender',
@@ -636,32 +638,44 @@ def predict():
         for key, value in data.items():
             if key in field_mapping:
                 converted_data[field_mapping[key]] = value
+                print(f"🔄 Mapped {key} -> {field_mapping[key]} = {value}")
             else:
                 converted_data[key] = value
         
+        print(f"✅ Converted data: {converted_data}")  # Debug log
+        
         # Convert gender from frontend format (0=female, 1=male) to dataset format (1=female, 2=male)
         if 'gender' in converted_data:
+            original_gender = converted_data['gender']
             if converted_data['gender'] == 0:  # Frontend: 0 = female
                 converted_data['gender'] = 1   # Dataset: 1 = female
             elif converted_data['gender'] == 1:  # Frontend: 1 = male
                 converted_data['gender'] = 2     # Dataset: 2 = male
+            print(f"🔄 Gender conversion: {original_gender} -> {converted_data['gender']}")
         
         # Validasi input dengan field names yang sudah dikonversi
         required_fields = ['age', 'gender', 'height', 'weight', 'ap_hi', 'ap_lo', 
                           'cholesterol', 'gluc', 'smoke', 'alco', 'active']
         
+        missing_fields = []
         for field in required_fields:
-            if field not in converted_data:
+            if field not in converted_data or converted_data[field] is None:
                 original_field = next((k for k, v in field_mapping.items() if v == field), field)
-                return jsonify({
-                    "success": False,
-                    "error": {
-                        "message": f"Field '{original_field}' wajib diisi",
-                        "type": "validation_error",
-                        "service": "ml-prediction"
-                    },
-                    "status": "error"
-                }), 400
+                missing_fields.append(original_field)
+        
+        if missing_fields:
+            return jsonify({
+                "success": False,
+                "error": {
+                    "message": f"Missing required fields: {', '.join(missing_fields)}",
+                    "type": "validation_error",
+                    "service": "ml-prediction",
+                    "missing_fields": missing_fields,
+                    "received_data": list(data.keys()),
+                    "converted_data": list(converted_data.keys())
+                },
+                "status": "error"
+            }), 400
         
         # Validasi ranges
         age_years = converted_data['age']
@@ -676,16 +690,18 @@ def predict():
                 "status": "error"
             }), 400
         
-        if converted_data['gender'] not in [1, 2]:
-            return jsonify({
-                "success": False,
-                "error": {
-                    "message": "Sex harus 0 (female) atau 1 (male) di frontend",
-                    "type": "validation_error",
-                    "service": "ml-prediction"
-                },
-                "status": "error"
-            }), 400
+        # Updated gender validation - accept dataset format (1=female, 2=male)
+        if 'gender' in converted_data:
+            if converted_data['gender'] not in [1, 2]:  # Accept dataset format
+                return jsonify({
+                    "success": False,
+                    "error": {
+                        "message": "Gender harus 1 (female) atau 2 (male) di dataset format",
+                        "type": "validation_error",
+                        "service": "ml-prediction"
+                    },
+                    "status": "error"
+                }), 400
         
         if converted_data['height'] <= 0 or converted_data['weight'] <= 0:
             return jsonify({
@@ -763,6 +779,11 @@ def predict():
         
         # Calculate BMI
         bmi = round(converted_data['weight'] / ((converted_data['height']/100) ** 2), 2)
+        bmi_category = "Underweight" if bmi < 18.5 else "Normal" if bmi < 25 else "Overweight" if bmi < 30 else "Obese"
+        
+        # Generate interpretation and recommendation
+        interpretation = "Berdasarkan data yang diberikan, terdapat indikasi risiko penyakit kardiovaskular" if prediction == 1 else "Berdasarkan data yang diberikan, risiko penyakit kardiovaskular relatif rendah"
+        recommendation = "RISIKO TINGGI - Disarankan konsultasi dengan dokter" if prediction == 1 else "RISIKO RENDAH - Pertahankan gaya hidup sehat"
         
         # Format response to match main backend format
         response = {
@@ -772,16 +793,14 @@ def predict():
                 "confidence": round(float(confidence), 4),
                 "probability": round(float(prediction_prob), 4),
                 "risk_level": "HIGH" if prediction == 1 else "LOW",
-                "result_message": "RISIKO TINGGI - Disarankan konsultasi dengan dokter" if prediction == 1 else "RISIKO RENDAH - Pertahankan gaya hidup sehat",
-                "interpretation": "Berdasarkan data yang diberikan, terdapat indikasi risiko penyakit kardiovaskular" if prediction == 1 else "Berdasarkan data yang diberikan, risiko penyakit kardiovaskular relatif rendah",
                 "patient_data": {
                     "age_years": converted_data['age'],
                     "age_days": age_days,
-                    "gender": "Female" if converted_data['gender'] == 1 else "Male",  # Updated mapping
+                    "gender": "Female" if converted_data['gender'] == 1 else "Male",  # Gender mapping for consistency
                     "height": converted_data['height'],
                     "weight": converted_data['weight'],
                     "bmi": bmi,
-                    "bmi_category": "Underweight" if bmi < 18.5 else "Normal" if bmi < 25 else "Overweight" if bmi < 30 else "Obese",
+                    "bmi_category": bmi_category,
                     "blood_pressure": f"{converted_data['ap_hi']}/{converted_data['ap_lo']}",
                     "cholesterol_level": ["Normal", "Above Normal", "Well Above Normal"][converted_data['cholesterol']-1],
                     "glucose_level": ["Normal", "Above Normal", "Well Above Normal"][converted_data['gluc']-1],
@@ -790,7 +809,9 @@ def predict():
                         "alcohol": "Yes" if converted_data['alco'] == 1 else "No",
                         "physical_activity": "Yes" if converted_data['active'] == 1 else "No"
                     }
-                }
+                },
+                "interpretation": interpretation,
+                "result_message": recommendation
             },
             "metadata": {
                 "service": "ml-prediction",
@@ -802,9 +823,11 @@ def predict():
             "status": "success"
         }
         
+        print(f"✅ Prediction successful: {prediction} (prob: {prediction_prob:.4f})")
         return jsonify(response)
     
     except Exception as e:
+        print(f"❌ Prediction error: {str(e)}")
         return jsonify({
             "success": False,
             "error": {
