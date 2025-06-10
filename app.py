@@ -412,55 +412,77 @@ def predict():
                 "status": "error"
             }), 400
         
-        # Validasi input
+        # Map frontend field names to backend field names
+        field_mapping = {
+            'sex': 'gender',
+            'systolic': 'ap_hi', 
+            'diastolic': 'ap_lo',
+            'glucose': 'gluc',
+            'smoking': 'smoke',
+            'alcohol': 'alco',
+            'physical_activity': 'active'
+        }
+        
+        # Convert field names
+        converted_data = {}
+        for key, value in data.items():
+            if key in field_mapping:
+                converted_data[field_mapping[key]] = value
+            else:
+                converted_data[key] = value
+        
+        # Validasi input dengan field names yang sudah dikonversi
         required_fields = ['age', 'gender', 'height', 'weight', 'ap_hi', 'ap_lo', 
                           'cholesterol', 'gluc', 'smoke', 'alco', 'active']
         
         for field in required_fields:
-            if field not in data:
+            if field not in converted_data:
+                # Check original field name for better error message
+                original_field = next((k for k, v in field_mapping.items() if v == field), field)
                 return jsonify({
-                    "error": f"Field '{field}' wajib diisi",
+                    "error": f"Field '{original_field}' wajib diisi",
                     "status": "error"
                 }), 400
         
         # Validasi ranges
-        age_years = data['age']
+        age_years = converted_data['age']
         if not isinstance(age_years, (int, float)) or age_years < 1 or age_years > 120:
             return jsonify({
                 "error": "Age harus antara 1-120 tahun",
                 "status": "error"
             }), 400
         
-        if data['gender'] not in [0, 1]:
+        if converted_data['gender'] not in [0, 1]:
             return jsonify({
-                "error": "Gender harus 0 (female) atau 1 (male)",
+                "error": "Sex harus 0 (female) atau 1 (male)",
                 "status": "error"
             }), 400
         
-        if data['height'] <= 0 or data['weight'] <= 0:
+        if converted_data['height'] <= 0 or converted_data['weight'] <= 0:
             return jsonify({
                 "error": "Height dan weight harus lebih besar dari 0",
                 "status": "error"
             }), 400
         
-        if data['ap_hi'] <= data['ap_lo']:
+        if converted_data['ap_hi'] <= converted_data['ap_lo']:
             return jsonify({
-                "error": "Systolic BP (ap_hi) harus lebih besar dari Diastolic BP (ap_lo)",
+                "error": "Systolic BP harus lebih besar dari Diastolic BP",
                 "status": "error"
             }), 400
         
         # Validasi categorical fields
         for field in ['cholesterol', 'gluc']:
-            if data[field] not in [1, 2, 3]:
+            if converted_data[field] not in [1, 2, 3]:
+                field_name = 'glucose' if field == 'gluc' else field
                 return jsonify({
-                    "error": f"{field} harus 1, 2, atau 3",
+                    "error": f"{field_name} harus 1, 2, atau 3",
                     "status": "error"
                 }), 400
         
-        for field in ['smoke', 'alco', 'active']:
-            if data[field] not in [0, 1]:
+        for field, original_name in [('smoke', 'smoking'), ('alco', 'alcohol'), ('active', 'physical_activity')]:
+            if converted_data[field] not in [0, 1]:
                 return jsonify({
-                    "error": f"{field} harus 0 atau 1",
+                    "error": f"{original_name} harus 0 atau 1",
                     "status": "error"
                 }), 400
         
@@ -470,16 +492,16 @@ def predict():
         # Prepare input data
         input_data = np.array([[
             age_days,
-            data['gender'],
-            data['height'],
-            data['weight'],
-            data['ap_hi'],
-            data['ap_lo'],
-            data['cholesterol'],
-            data['gluc'],
-            data['smoke'],
-            data['alco'],
-            data['active']
+            converted_data['gender'],
+            converted_data['height'],
+            converted_data['weight'],
+            converted_data['ap_hi'],
+            converted_data['ap_lo'],
+            converted_data['cholesterol'],
+            converted_data['gluc'],
+            converted_data['smoke'],
+            converted_data['alco'],
+            converted_data['active']
         ]])
         
         # Scale input data
@@ -499,7 +521,7 @@ def predict():
             interpretation = "Berdasarkan data yang diberikan, risiko penyakit kardiovaskular relatif rendah"
         
         # Calculate BMI
-        bmi = round(data['weight'] / ((data['height']/100) ** 2), 2)
+        bmi = round(converted_data['weight'] / ((converted_data['height']/100) ** 2), 2)
         
         response = {
             "prediction": int(prediction),
@@ -510,16 +532,16 @@ def predict():
             "input_data": {
                 "age_years": age_years,
                 "age_days": age_days,
-                "gender": "Male" if data['gender'] == 1 else "Female",
-                "height": data['height'],
-                "weight": data['weight'],
+                "gender": "Male" if converted_data['gender'] == 1 else "Female",
+                "height": converted_data['height'],
+                "weight": converted_data['weight'],
                 "bmi": bmi,
-                "blood_pressure": f"{data['ap_hi']}/{data['ap_lo']}",
-                "cholesterol_level": ["Normal", "Above Normal", "Well Above Normal"][data['cholesterol']-1],
-                "glucose_level": ["Normal", "Above Normal", "Well Above Normal"][data['gluc']-1],
-                "smoking": "Yes" if data['smoke'] == 1 else "No",
-                "alcohol": "Yes" if data['alco'] == 1 else "No",
-                "physical_activity": "Yes" if data['active'] == 1 else "No"
+                "blood_pressure": f"{converted_data['ap_hi']}/{converted_data['ap_lo']}",
+                "cholesterol_level": ["Normal", "Above Normal", "Well Above Normal"][converted_data['cholesterol']-1],
+                "glucose_level": ["Normal", "Above Normal", "Well Above Normal"][converted_data['gluc']-1],
+                "smoking": "Yes" if converted_data['smoke'] == 1 else "No",
+                "alcohol": "Yes" if converted_data['alco'] == 1 else "No",
+                "physical_activity": "Yes" if converted_data['active'] == 1 else "No"
             },
             "timestamp": datetime.datetime.now().isoformat(),
             "status": "success"
