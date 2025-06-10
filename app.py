@@ -12,11 +12,12 @@ import tensorflow as tf
 # Initialize Flask app
 app = Flask(__name__)
 
-# Configure CORS to match your Hapi.js setup
+# Configure CORS with more permissive settings for production
 CORS(app, 
-     origins=['http://localhost:5173', 'http://localhost:3000', 'http://localhost:5001'],
+     origins=['*'],  # Allow all origins for now
      allow_headers=['Accept', 'Authorization', 'Content-Type', 'If-None-Match', 'cache-control', 'x-requested-with'],
-     supports_credentials=True)
+     supports_credentials=False,  # Set to False when using wildcard
+     methods=['GET', 'POST', 'OPTIONS'])
 
 # Global variables for model and preprocessing objects
 model = None
@@ -264,7 +265,8 @@ def home():
             "feature_info": "loaded" if feature_info is not None else "not_loaded"
         },
         "integration": {
-            "main_backend": "http://localhost:5001",
+            "main_backend": "https://backend-api-cgkk.onrender.com",
+            "local_backend": "http://localhost:5001",
             "compatible_endpoints": ["health", "predict", "status"],
             "data_format": "standardized for frontend integration"
         }
@@ -507,6 +509,13 @@ def predict():
             else:
                 converted_data[key] = value
         
+        # Convert gender from frontend format (0=female, 1=male) to dataset format (1=female, 2=male)
+        if 'gender' in converted_data:
+            if converted_data['gender'] == 0:  # Frontend: 0 = female
+                converted_data['gender'] = 1   # Dataset: 1 = female
+            elif converted_data['gender'] == 1:  # Frontend: 1 = male
+                converted_data['gender'] = 2     # Dataset: 2 = male
+        
         # Validasi input dengan field names yang sudah dikonversi
         required_fields = ['age', 'gender', 'height', 'weight', 'ap_hi', 'ap_lo', 
                           'cholesterol', 'gluc', 'smoke', 'alco', 'active']
@@ -537,11 +546,11 @@ def predict():
                 "status": "error"
             }), 400
         
-        if converted_data['gender'] not in [0, 1]:
+        if converted_data['gender'] not in [1, 2]:
             return jsonify({
                 "success": False,
                 "error": {
-                    "message": "Sex harus 0 (female) atau 1 (male)",
+                    "message": "Sex harus 0 (female) atau 1 (male) di frontend",
                     "type": "validation_error",
                     "service": "ml-prediction"
                 },
@@ -638,7 +647,7 @@ def predict():
                 "patient_data": {
                     "age_years": converted_data['age'],
                     "age_days": age_days,
-                    "gender": "Male" if converted_data['gender'] == 1 else "Female",
+                    "gender": "Female" if converted_data['gender'] == 1 else "Male",  # Updated mapping
                     "height": converted_data['height'],
                     "weight": converted_data['weight'],
                     "bmi": bmi,
@@ -705,6 +714,9 @@ def internal_error(error):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     print(f"🤖 Starting IllDetect ML Service on port {port}")
-    print(f"🔗 Main backend integration: http://localhost:5001")
+    print(f"🔗 Main backend integration:")
+    print(f"   Production: https://backend-api-cgkk.onrender.com")
+    print(f"   Local: http://localhost:5001")
     print(f"🎯 ML endpoints available with /api prefix for consistency")
+    print(f"🌐 CORS enabled for backend integration")
     app.run(debug=False, host='0.0.0.0', port=port)
