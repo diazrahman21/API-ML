@@ -10,11 +10,11 @@ import traceback
 # Initialize Flask app
 app = Flask(__name__)
 
-# Configure CORS with more permissive settings for production
+# Configure CORS with proper headers for production
 CORS(app, 
-     origins=['*'],
-     allow_headers=['Accept', 'Authorization', 'Content-Type', 'If-None-Match', 'cache-control', 'x-requested-with'],
-     supports_credentials=False,
+     origins=['*', 'http://localhost:3000', 'https://backend-api-cgkk.onrender.com'],
+     allow_headers=['Content-Type', 'Accept', 'Authorization', 'cache-control', 'x-requested-with'],
+     supports_credentials=True,
      methods=['GET', 'POST', 'OPTIONS'])
 
 # Global variables for model and preprocessing objects
