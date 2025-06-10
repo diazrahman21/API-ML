@@ -41,29 +41,36 @@ def load_model_and_preprocessors():
             print(f"❌ Missing files: {missing_files}")
             # Create dummy objects for development/testing
             print("🔧 Creating dummy objects for testing...")
-            import sklearn.preprocessing
-            scaler = sklearn.preprocessing.StandardScaler()
-            feature_info = {"features": 11, "loaded": "dummy"}
-            
-            # Create a simple dummy model function
-            class DummyModel:
-                def predict(self, X):
-                    return [[0.5]]  # Return dummy prediction
-                def count_params(self):
-                    return 1000
-                @property
-                def input_shape(self):
-                    return (None, 11)
-                @property
-                def output_shape(self):
-                    return (None, 1)
-                @property
-                def layers(self):
-                    return [1, 2, 3]  # Dummy layers
-            
-            model = DummyModel()
-            print("✅ Dummy objects created for testing")
-            return True
+            try:
+                import sklearn.preprocessing
+                scaler = sklearn.preprocessing.StandardScaler()
+                # Fit with dummy data to make it functional
+                dummy_data = [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]]
+                scaler.fit(dummy_data)
+                feature_info = {"features": 11, "loaded": "dummy"}
+                
+                # Create a simple dummy model function
+                class DummyModel:
+                    def predict(self, X):
+                        return [[0.5]]  # Return dummy prediction
+                    def count_params(self):
+                        return 1000
+                    @property
+                    def input_shape(self):
+                        return (None, 11)
+                    @property
+                    def output_shape(self):
+                        return (None, 1)
+                    @property
+                    def layers(self):
+                        return [1, 2, 3]  # Dummy layers
+                
+                model = DummyModel()
+                print("✅ Dummy objects created for testing")
+                return True
+            except Exception as e:
+                print(f"❌ Error creating dummy objects: {str(e)}")
+                return False
         
         print("✅ All required files found")
         
