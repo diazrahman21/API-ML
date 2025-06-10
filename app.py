@@ -96,12 +96,23 @@ print("🚀 Starting Cardiovascular Disease Prediction API...")
 print(f"🐍 Python version: {sys.version}")
 print(f"🧠 TensorFlow version: {tf.__version__}")
 print(f"📁 Working directory: {os.getcwd()}")
+print(f"🌐 Port: {os.environ.get('PORT', 'Not set')}")
 
-# Try to load models immediately
-if load_model_and_preprocessors():
-    print("✅ Initialization successful - All models loaded")
-else:
-    print("⚠️ Initialization failed - Models will be loaded on first request")
+# Try to load models immediately with error handling
+try:
+    if load_model_and_preprocessors():
+        print("✅ Initialization successful - All models loaded")
+    else:
+        print("⚠️ Initialization failed - Models will be loaded on first request")
+except Exception as e:
+    print(f"❌ Startup error: {str(e)}")
+    print("⚠️ Will attempt to load models on first request")
+
+# Add a simple health check that responds quickly
+@app.route('/ping', methods=['GET'])
+def ping():
+    """Simple ping endpoint for Railway health checks"""
+    return jsonify({"status": "ok", "timestamp": datetime.datetime.now().isoformat()})
 
 @app.route('/dataset-info', methods=['GET'])
 def dataset_info():
@@ -719,4 +730,5 @@ if __name__ == '__main__':
     print(f"   Local: http://localhost:5001")
     print(f"🎯 ML endpoints available with /api prefix for consistency")
     print(f"🌐 CORS enabled for backend integration")
+    print(f"📡 Health check available at /ping")
     app.run(debug=False, host='0.0.0.0', port=port)
